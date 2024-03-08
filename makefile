@@ -1,6 +1,7 @@
 CXX = aarch64-linux-gnu-g++
 CXXFLAGS = -Wall -std=c++17 -O3 -Iinc -fPIC
 CLIB = aarch64-linux-gnu-ar rcs
+LIBS = -lgpiod
 
 TARGET = aarch64_linux_gpio.a
 
@@ -26,7 +27,7 @@ clean:
 	@$(RM) -rv $(BIN_DIR) $(BIN_DIR)
 
 $(EXE): $(OBJS)
-	@$(CLIB) -o $@ $(OBJS)
+	@$(CLIB) -o $@ $(OBJS) $(LIBS) $(LD_FLAGS)
 	@echo "[\e[0;32mSuccess\e[0m]	Linking complete!"
 
 $(BIN_DIR)/%.o: $(SRC_DIR)/%.c | $(BIN_DIR)

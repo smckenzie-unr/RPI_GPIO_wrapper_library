@@ -16,244 +16,154 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <stdexcept>
+#include <filesystem>
+#include <string.h>
 
 #include "../inc/gpioDrive.h"
 
-#define CLOSE_FD(FD)        \
-    do{                     \
-        close(FD);          \
-        FD = 0;             \
-    }while(false)
+#ifdef NULL
+#undef NULL
+#define NULL (0)
+#endif
 
-gpioDriver::gpioDriver(const std::string& pinNumber, pin_type pinDir) noexcept(false)
-: m_s4FD(0)
+#ifdef TRUE
+#undef TRUE
+#endif
+
+#ifdef FALSE
+#undef FALSE
+#endif
+
+#define TRUE (1 == 1)
+#define FALSE (1 == 0)
+
+#define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
+
+gpioDriver::gpioDriver(const uint& pinNumber,  
+                       const std::string& gpioChip, 
+                       pin_type pinDir) noexcept(false)
+: m_outputState(false)
+, m_gpioPin(pinNumber)
+, m_gpioChip(nullptr)
+, m_gpioLine(nullptr)
 , m_pinType(pinDir)
-, m_strPin(pinNumber)
 {
-    if(m_strPin.size() == 0)
+    if(!gpioChip.size())
     {
-        throw std::invalid_argument("No pin number was given in constructor");
-    } 
+        throw GPIO_ERROR_INVALID_ARGUMENT_CHIP_STRING_SIZE_ZERO;
+    }
 
-    std::string pinDirFile(std::string("/sys/class/gpio/gpio") + m_strPin + std::string("/direction"));
-    std::string pinValueFile(std::string("/sys/class/gpio/gpio") + m_strPin + std::string("/value"));
-    std::string pinDirSet((m_pinType == pin_type::output_pin) ? "out" : "in");
-
-    m_s4FD = open("/sys/class/gpio/export", O_WRONLY);
-    if(m_s4FD < 0)
+    m_gpioChip = gpiod_chip_open_by_name(gpioChip.c_str());
+    if(!m_gpioChip)
     {
-        throw std::runtime_error("Unable to open /sys/class/gpio/export");
+        throw GPIO_ERROR_FAILED_TO_CREATE_GPIO_CHIP_STRUCT;
     }
     
-    if(write(m_s4FD, m_strPin.c_str(), m_strPin.size()) != static_cast<ssize_t>(m_strPin.size()))
+    m_gpioLine = gpiod_chip_get_line(m_gpioChip, m_gpioPin);
+    if(!m_gpioLine)
     {
-        throw std::runtime_error("Error writing to /sys/class/gpio/export");
-    }
-    
-    CLOSE_FD(m_s4FD);
-
-    m_s4FD = open(pinDirFile.c_str(), O_WRONLY);
-    if(m_s4FD < 0) 
-    {
-        throw std::runtime_error(std::string("Unable to open ") + pinDirFile);
+        gpiod_chip_close(m_gpioChip);
+        throw GPIO_ERROR_FAILED_TO_CREATE_GPIO_LINE_STRUCT;
     }
 
-    if(write(m_s4FD, pinDirSet.c_str(), pinDirSet.size()) != static_cast<ssize_t>(pinDirSet.size())) 
+    const std::string driverID("gpioDriverObject");
+    if(m_pinType == pin_type::output_pin)
     {
-        throw std::runtime_error(std::string("Error writing to ") + pinDirFile);
+        if(gpiod_line_request_output(m_gpioLine, driverID.c_str(), NULL) < NULL)
+        {
+            gpiod_chip_close(m_gpioChip);
+            gpiod_line_release(m_gpioLine);
+            throw GPIO_ERROR_FAILED_OUTPUT_LINE_REQUEST_FAILED;
+        }
     }
-    
-    CLOSE_FD(m_s4FD);
-
-    m_s4FD = open(pinValueFile.c_str(), O_WRONLY);
-    if(m_s4FD < 0)
+    else if(m_pinType == pin_type::input_pin)
     {
-        throw std::runtime_error(std::string("Unable to open ") + pinValueFile);
-    }
-}
-gpioDriver::gpioDriver(const uint64_t pinNumber, pin_type pinDir) noexcept(false)
-: m_s4FD(0)
-, m_pinType(pinDir)
-, m_strPin(std::to_string(pinNumber))
-{
-    std::string pinDirFile(std::string("/sys/class/gpio/gpio") + m_strPin + std::string("/direction"));
-    std::string pinValueFile(std::string("/sys/class/gpio/gpio") + m_strPin + std::string("/value"));
-    std::string pinDirSet((m_pinType == pin_type::output_pin) ? "out" : "in");
-
-    m_s4FD = open("/sys/class/gpio/export", O_WRONLY);
-    if(m_s4FD < 0)
-    {
-        throw std::runtime_error("Unable to open /sys/class/gpio/export");
-    }
-    
-    if(write(m_s4FD, m_strPin.c_str(), m_strPin.size()) != static_cast<ssize_t>(m_strPin.size()))
-    {
-        throw std::runtime_error("Error writing to /sys/class/gpio/export");
-    }
-    
-    CLOSE_FD(m_s4FD);
-
-    m_s4FD = open(pinDirFile.c_str(), O_WRONLY);
-    if(m_s4FD < 0) 
-    {
-        throw std::runtime_error(std::string("Unable to open ") + pinDirFile);
-    }
-
-    if(write(m_s4FD, pinDirSet.c_str(), pinDirSet.size()) != static_cast<ssize_t>(pinDirSet.size())) 
-    {
-        throw std::runtime_error(std::string("Error writing to ") + pinDirFile);
-    }
-    
-    CLOSE_FD(m_s4FD);
-
-    m_s4FD = open(pinValueFile.c_str(), O_WRONLY);
-    if(m_s4FD < 0)
-    {
-        throw std::runtime_error(std::string("Unable to open ") + pinValueFile);
-    }
-}
-gpioDriver::gpioDriver(const char* __restrict pinNumber, pin_type pinDir) noexcept(false)
-: m_s4FD(0)
-, m_pinType(pinDir)
-, m_strPin(pinNumber)
-{
-    if(m_strPin.size() == 0)
-    {
-        throw std::invalid_argument("No pin number was given in constructor");
-    } 
-    std::string pinDirFile(std::string("/sys/class/gpio/gpio") + m_strPin + std::string("/direction"));
-    std::string pinValueFile(std::string("/sys/class/gpio/gpio") + m_strPin + std::string("/value"));
-    std::string pinDirSet((m_pinType == pin_type::output_pin) ? "out" : "in");
-
-    m_s4FD = open("/sys/class/gpio/export", O_WRONLY);
-    if(m_s4FD < 0)
-    {
-        throw std::runtime_error("Unable to open /sys/class/gpio/export");
-    }
-    
-    if(write(m_s4FD, m_strPin.c_str(), m_strPin.size()) != static_cast<ssize_t>(m_strPin.size()))
-    {
-        throw std::runtime_error("Error writing to /sys/class/gpio/export");
-    }
-    
-    CLOSE_FD(m_s4FD);
-
-    m_s4FD = open(pinDirFile.c_str(), O_WRONLY);
-    if(m_s4FD < 0) 
-    {
-        throw std::runtime_error(std::string("Unable to open ") + pinDirFile);
-    }
-
-    if(write(m_s4FD, pinDirSet.c_str(), pinDirSet.size()) != static_cast<ssize_t>(pinDirSet.size())) 
-    {
-        throw std::runtime_error(std::string("Error writing to ") + pinDirFile);
-    }
-    
-    CLOSE_FD(m_s4FD);
-
-    m_s4FD = open(pinValueFile.c_str(), O_WRONLY);
-    if(m_s4FD < 0)
-    {
-        throw std::runtime_error(std::string("Unable to open ") + pinValueFile);
+        if(gpiod_line_request_input(m_gpioLine, driverID.c_str()) < NULL)
+        {
+            gpiod_chip_close(m_gpioChip);
+            gpiod_line_release(m_gpioLine);
+            throw GPIO_ERROR_FAILED_INPUT_LINE_REQUEST_FAILED;
+        }
     }
 }
 gpioDriver::~gpioDriver(void) noexcept(false)
 {
-    CLOSE_FD(m_s4FD);
+    gpiod_chip_close(m_gpioChip);
+    gpiod_line_release(m_gpioLine);
 
-    m_s4FD = open("/sys/class/gpio/unexport", O_WRONLY);
-    if(m_s4FD < 0) 
-    {
-        throw std::runtime_error("Unable to open /sys/class/gpio/unexport");
-    }
-
-    if(write(m_s4FD, m_strPin.c_str(), m_strPin.size()) != static_cast<ssize_t>(m_strPin.size())) 
-    {
-        throw std::runtime_error("Error writing to /sys/class/gpio/unexport");
-    }
-
-    CLOSE_FD(m_s4FD);
+    m_gpioChip = nullptr;
+    m_gpioChip = nullptr;
 }
 
 void gpioDriver::set_pin_direction(pin_type pinDir) noexcept(false)
 {
     if(pinDir != m_pinType)
     {
-        std::string pinDirFile(std::string("/sys/class/gpio/gpio") + m_strPin + std::string("/direction"));
-        std::string pinValueFile(std::string("/sys/class/gpio/gpio") + m_strPin + std::string("/value"));
-        std::string pinDirSet((m_pinType == pin_type::output_pin) ? "out" : "in");
-
-        m_pinType = pinDir;
-
-        CLOSE_FD(m_s4FD);
-
-        m_s4FD = open("/sys/class/gpio/unexport", O_WRONLY);
-        if(m_s4FD < 0) 
+        const std::string driverID("gpioDriverObject");
+        if(m_pinType == pin_type::output_pin)
         {
-            throw std::runtime_error("Unable to open /sys/class/gpio/unexport");
+            if(gpiod_line_request_output(m_gpioLine, driverID.c_str(), NULL) < NULL)
+            {
+                throw GPIO_ERROR_FAILED_OUTPUT_LINE_REQUEST_FAILED;
+            }
         }
-
-        if(write(m_s4FD, m_strPin.c_str(), m_strPin.size()) != static_cast<ssize_t>(m_strPin.size())) 
+        else if(m_pinType == pin_type::input_pin)
         {
-            throw std::runtime_error("Error writing to /sys/class/gpio/unexport");
-        }
-
-        CLOSE_FD(m_s4FD);
-
-        m_s4FD = open(pinDirFile.c_str(), O_WRONLY);
-        if(m_s4FD < 0) 
-        {
-            throw std::runtime_error(std::string("Unable to open ") + pinDirFile);
-        }
-
-        if(write(m_s4FD, pinDirSet.c_str(), pinDirSet.size()) != static_cast<ssize_t>(pinDirSet.size())) 
-        {
-            throw std::runtime_error(std::string("Error writing to ") + pinDirFile);
-        }
-        
-        CLOSE_FD(m_s4FD);
-
-        m_s4FD = open(pinValueFile.c_str(), O_WRONLY);
-        if(m_s4FD < 0)
-        {
-            throw std::runtime_error(std::string("Unable to open ") + pinValueFile);
+            if(gpiod_line_request_input(m_gpioLine, driverID.c_str()) < NULL)
+            {
+                throw GPIO_ERROR_FAILED_INPUT_LINE_REQUEST_FAILED;
+            }
         }
     }
 }
     
 void gpioDriver::set_output_pin(void) noexcept(false)
 {
-    if(write(m_s4FD, "1", 1) != 1) 
+    if(!m_outputState)
     {
-        throw std::runtime_error("Error writing to /sys/class/gpio/gpio24/value");
+        m_outputState = true;
+        if(gpiod_line_set_value(m_gpioLine, TRUE) < NULL) 
+        {
+            throw GPIO_ERROR_COULD_NOT_SET_LINE_VALUE_TRUE;
+        }
     }
 }
 void gpioDriver::reset_output_pin(void) noexcept(false)
 {
-    if(write(m_s4FD, "0", 1) != 1) 
+    if(m_outputState)
     {
-        throw std::runtime_error("Error writing to /sys/class/gpio/gpio24/value");
+        m_outputState = false;
+        if(gpiod_line_set_value(m_gpioLine, FALSE) < NULL) 
+        {
+            throw GPIO_ERROR_COULD_NOT_SET_LINE_VALUE_FALSE;
+        }
     }
 }
 void gpioDriver::toggle_output_pin(void) noexcept(false)
 {
-    char val(0);
-    if(read(m_s4FD, &val, sizeof(char)) < 0)
+    if(m_outputState)
     {
-        throw std::runtime_error(std::string("Error reading /sys/class/gpio/gpio" + m_strPin + std::string("/value")));
-    }
-
-    if(val == '0')
-    {
-        this->set_output_pin();
+        m_outputState = false;
+        if(gpiod_line_set_value(m_gpioLine, FALSE) < NULL) 
+        {
+            throw GPIO_ERROR_COULD_NOT_SET_LINE_VALUE_FALSE;
+        }
     }
     else
     {
-        this->reset_output_pin();
+        m_outputState = true;
+        if(gpiod_line_set_value(m_gpioLine, TRUE) < NULL) 
+        {
+            throw GPIO_ERROR_COULD_NOT_SET_LINE_VALUE_TRUE;
+        }
     }
 }
 void gpioDriver::output_pin_state(bool state) noexcept(false)
 {
+    // TODO: Not sure if a function calling this object method in a try-catch block
+    // will catch an error thrown by another called object method in the callee method...
+    // Might need a try-catch block around this method calls and just re-throw the 
+    // exception if it is thrown...
     if(state)
     {
         this->reset_output_pin();
@@ -266,11 +176,39 @@ void gpioDriver::output_pin_state(bool state) noexcept(false)
 
 bool gpioDriver::read_input_pin(void) noexcept(false)
 {
-    char val(0);
-    if(read(m_s4FD, &val, sizeof(char)) < 0)
+    bool __return(false);
+    int check(-1);
+    
+    if(m_pinType == pin_type::input_pin)
     {
-        throw std::runtime_error(std::string("Error reading /sys/class/gpio/gpio" + m_strPin + std::string("/value")));
+        check = gpiod_line_get_value(m_gpioLine);
+        if(check < NULL)
+        {
+            throw GPIO_ERROR_COULD_NOT_READ_INPUT_LINE;
+        }
+        else if(check)
+        {
+            __return = true;
+        }
     }
 
-    return (val == '0') ? false : true;
+    return __return;
+}
+
+std::deque<std::string> gpioDriver::get_availible_chips(void) noexcept
+{
+    namespace fs = std::filesystem;
+
+    std::string filePath("/dev");
+    std::deque<std::string> devices;
+
+    for (const auto& entry : fs::directory_iterator(filePath))
+    {
+        if(entry.path().filename().generic_string().find(std::string("gpiochip")) != std::string::npos)
+        {
+            devices.push_back(entry.path().filename().generic_string());
+        }
+    }
+
+    return devices;
 }

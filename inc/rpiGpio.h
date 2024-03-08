@@ -70,12 +70,16 @@ enum class RPI5_J8HEADER : uint64_t
     PIN_40  = 21
 };
 
+constexpr char DEFAULT_RPI_GPIO_CHIP[]{"gpiochip4"};
+
 class raspberryPiGpio final : public gpioDriver
 {
 public:
     raspberryPiGpio(const raspberryPiGpio &) = delete;
     raspberryPiGpio(raspberryPiGpio &&) = delete;
-    explicit raspberryPiGpio(RPI5_J8HEADER pin, pin_type pinDir = pin_type::output_pin) noexcept(false);
+    explicit raspberryPiGpio(RPI5_J8HEADER pin, 
+                             const std::string& gpioChip = std::string(DEFAULT_RPI_GPIO_CHIP), 
+                             pin_type pinDir = pin_type::output_pin) noexcept(false);
     ~raspberryPiGpio(void) noexcept override;
 
     raspberryPiGpio& operator =(const raspberryPiGpio &) = delete;

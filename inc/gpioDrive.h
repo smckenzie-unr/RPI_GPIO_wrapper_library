@@ -14,6 +14,8 @@
 
 #include <string>
 #include <cstdint>
+#include <gpiod.h>
+#include <deque>
 
 enum class pin_type : uint64_t
 {
@@ -21,14 +23,30 @@ enum class pin_type : uint64_t
     input_pin
 };
 
+typedef enum error_enum : uint64_t
+{
+    GPIO_SUCCESS,
+    GPIO_ERROR_INVALID_ARGUMENT_CHIP_STRING_SIZE_ZERO,
+    GPIO_ERROR_FAILED_TO_CREATE_GPIO_CHIP_STRUCT,
+    GPIO_ERROR_FAILED_TO_CREATE_GPIO_LINE_STRUCT,
+    GPIO_ERROR_FAILED_OUTPUT_LINE_REQUEST_FAILED,
+    GPIO_ERROR_FAILED_INPUT_LINE_REQUEST_FAILED,
+    GPIO_ERROR_COULD_NOT_SET_LINE_VALUE_TRUE,
+    GPIO_ERROR_COULD_NOT_SET_LINE_VALUE_FALSE,
+    GPIO_ERROR_COULD_NOT_READ_INPUT_LINE
+}gpioDriverError_t;
+
 class gpioDriver
 {
+    using gpioChip_t = struct gpiod_chip;
+    using gpioLine_t = struct gpiod_line;
+
 public:
     gpioDriver(const gpioDriver&) = delete;
     gpioDriver(gpioDriver&&) = delete;
-    gpioDriver(const std::string& pinNumber, pin_type pinDir = pin_type::output_pin) noexcept(false);
-    gpioDriver(const uint64_t pinNumber, pin_type pinDir = pin_type::output_pin) noexcept(false);
-    gpioDriver(const char* __restrict pinNumber, pin_type pinDir = pin_type::output_pin) noexcept(false);
+    gpioDriver(const uint& pinNumber, 
+               const std::string& gpioChip, 
+               pin_type pinDir = pin_type::output_pin) noexcept(false);
     virtual ~gpioDriver(void) noexcept(false);
 
     gpioDriver& operator =(const gpioDriver&) = delete;
@@ -42,11 +60,16 @@ public:
     void output_pin_state(bool state) noexcept(false);
 
     bool read_input_pin(void) noexcept(false);
+
+    static std::deque<std::string> get_availible_chips(void) noexcept;
     
 private:
-    signed long int m_s4FD;
+    bool m_outputState;
+    uint m_gpioPin;
+    gpioChip_t* m_gpioChip;
+    gpioLine_t* m_gpioLine;
     pin_type m_pinType;
-    const std::string m_strPin;
+    
 };
 
 #endif //__GPIODRIVER_H__
